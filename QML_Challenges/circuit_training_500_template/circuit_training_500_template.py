@@ -28,10 +28,39 @@ def classify_data(X_train, Y_train, X_test):
     predictions = []
 
     # QHACK #
+    def classify_data(X_train, Y_train, X_test):
+    """Develop and train your very own variational quantum classifier.
+
+    Use the provided training data to train your classifier. The code you write
+    for this challenge should be completely contained within this function
+    between the # QHACK # comment markers. The number of qubits, choice of
+    variational ansatz, cost function, and optimization method are all to be
+    developed by you in this function.
+
+    Args:
+        X_train (np.ndarray): An array of floats of size (250, 3) to be used as training data.
+        Y_train (np.ndarray): An array of size (250,) which are the categorical labels
+            associated to the training data. The categories are labeled by -1, 0, and 1.
+        X_test (np.ndarray): An array of floats of (50, 3) to serve as testing data.
+
+    Returns:
+        str: The predicted categories of X_test, converted from a list of ints to a
+            comma-separated string.
+    """
+
+    # Use this array to make a prediction for the labels of the data in X_test
+    predictions = []
+
+    # QHACK #
     
     from pennylane.optimize import NesterovMomentumOptimizer,AdagradOptimizer,AdamOptimizer
+    from pennylane.templates.embeddings import AmplitudeEmbedding
+    from qml.templates.layers import RandomLayers
+
+
+    dev = qml.device("default.qubit", wires=4)
     
-    dev = qml.device("default.qubit", wires=2)
+    
     
     def get_angles(x):
 
@@ -47,51 +76,20 @@ def classify_data(X_train, Y_train, X_test):
     X = X_train[:, 0:3]
     X_T = X_test[:, 0:3]
     
+    features = X
+    features_T= X_T
     #pad the vectors to size 2^2 with constant values
-    
-
-    padding = 0.03 * np.ones((len(X), 1))
-    X_pad = np.c_[np.c_[X, padding], np.zeros((len(X), 1))]
-    X_pad = X_pad[:,0:4]
-
-    padding = 0.03 * np.ones((len(X_T), 1))
-    X_Tpad = np.c_[np.c_[X_T, padding], np.zeros((len(X_T), 1))]
-    X_Tpad = X_Tpad[:,0:4]
-
-    
-    normalization = np.sqrt(np.sum(X_pad ** 2, -1))
-    X_norm = (X_pad.T / normalization).T
-
-    normalization = np.sqrt(np.sum(X_Tpad ** 2, -1))
-    X_Tnorm = (X_Tpad.T / normalization).T
-    
-    features = np.array([get_angles(x) for x in X_norm])
-    features_T = np.array([get_angles(x) for x in X_Tnorm])
-    
     
     Y = Y_train
 
 
 
     def statepreparation(a):
-        qml.RY(a[0], wires=0)
+        AmplitudeEmbedding(a,wires=range(4),pad_with=0.3,normalize=True)
+       # qml.Hadamard(wires=2)
+        
+        #qml.Hadamard(wires=3)
 
-        qml.CNOT(wires=[0, 1])
-        qml.RY(a[1], wires=1)
-        qml.CNOT(wires=[0, 1])
-        qml.RY(a[2], wires=1)
-
-        qml.PauliX(wires=0)
-        qml.CNOT(wires=[0, 1])
-        qml.RY(a[3], wires=1)
-        qml.CNOT(wires=[0, 1])
-        qml.RY(a[4], wires=1)
-        qml.PauliX(wires=0)
-
-    def layer(W):
-        qml.Rot(W[0, 0], W[0, 1], W[0, 2], wires=0)
-        qml.Rot(W[1, 0], W[1, 1], W[1, 2], wires=1)
-        qml.CNOT(wires=[0, 1])
 
 
     @qml.qnode(dev)
@@ -100,10 +98,26 @@ def classify_data(X_train, Y_train, X_test):
         #statepreparation(np.array([get_bin_rep(num) for num in x]))
         statepreparation(x)
 
-        for W in weights:
-            layer(W)
+    #     for i,W in eumerate(weights):
 
-        return qml.expval(qml.PauliZ(0)) #qml.expval(qml.PauliZ(0) @ qml.PauliZ(1))
+    #         if i < len(W)-1: 
+    #             layer(W)
+
+    #         else:
+
+        RandomLayers(weights,wires = range(3))
+
+        return qml.expval(qml.PauliZ(0)),qml.expval(qml.PauliZ(1)),qml.expval(qml.PauliZ(2)) #qml.expval(qml.PauliZ(0) @ qml.PauliZ(1))
+
+
+
+    def variational_classifier(var, x):
+
+        weights = var[0]
+        bias = var[1]
+        return circuit(weights, x) + bias
+
+
 
     def square_loss(labels, predictions):
         loss = 0
@@ -112,21 +126,37 @@ def classify_data(X_train, Y_train, X_test):
 
         loss = loss / len(labels)
         return loss
+    
+   
+    
+    def bce_loss(labels, predictions):
+        
+        classes_encoder={-1:0,0:1,1:2}
+        
+        
+        loss = 0
+        for l, p in zip(labels, predictions):
 
-    def cost(var, X, Y):
-        predictions = [variational_classifier(var, x) for x in X]
-        return square_loss(Y, predictions)
+            preds =  np.exp(p)/sum(np.exp(p))
+        
+            loss = loss -np.log(preds[classes_encoder[l.numpy()]])
 
-    def variational_classifier(var, x):
-        weights = var[0]
-        bias = var[1]
-        return circuit(weights, x) + bias
+     
+    
+        loss = loss / len(labels)
+        return loss
     
     def cost(var, X, Y):
         predictions = [variational_classifier(var, x) for x in X]
-        return square_loss(Y, predictions)
+        return bce_loss(Y, predictions )
 
 
+    def predict(num):
+        classes=[-1,0,1]
+        return classes[np.argmax(num)]
+        
+
+    
     def accuracy(labels, predictions):
 
         loss = 0
@@ -136,30 +166,14 @@ def classify_data(X_train, Y_train, X_test):
         loss = loss / len(labels)
 
         return loss
-
-    def predict(num):
-
-        if num>0.33333:
-
-            return 1
-
-        elif  num< -0.333333:
-
-            return -1
-
-        else: 
-            return 0
-
-
-
-
-
-    
     
     np.random.seed(0)
-
     num_data = len(Y)
     num_train = int(0.95 * num_data)
+    EPOCHS=15
+    
+    
+    
     index = np.random.permutation(range(num_data))
 
     feats_train = features[index[:num_train]]
@@ -168,40 +182,57 @@ def classify_data(X_train, Y_train, X_test):
     Y_val = Y[index[num_train:]]
 
     # We need these later for plotting
-    X_train = X[index[:num_train]]
-    X_val = X[index[num_train:]]
+   # X_train = X[index[:num_train]]
+   # X_val = X[index[num_train:]]
     #Optimization
     #First we initialize the variables.
 
-    num_qubits = 2
+    num_qubits = 3
     num_layers = 10
-    var_init = (0.01 * np.random.randn(num_layers, num_qubits, 3), 0.0)
+    #var_init = (0.01 * np.random.randn(num_layers, num_qubits, 3), 0.0)
+    var_init = (np.random.randn(num_layers, 15), np.random.randn(3))
+    
+    
     #Again we optimize the cost. This may take a little patience.
 
-    opt = AdagradOptimizer(0.07)
-    batch_size = 10
-
+    opt = NesterovMomentumOptimizer(0.1)
+    batch_size = 15
+    
     # train the variational classifier
     var = var_init
-    for it in range(30):
+    for it in range(EPOCHS):
 
         # Update the weights by one optimizer step
         batch_index = np.random.randint(0, num_train, (batch_size,))
         feats_train_batch = feats_train[batch_index]
         Y_train_batch = Y_train[batch_index]
+        
+        
         var = opt.step(lambda v: cost(v, feats_train_batch, Y_train_batch), var)
 
         # Compute predictions on train and validation set
         predictions_train = [predict(variational_classifier(var, f)) for f in feats_train]
-       # predictions_val = [predict(variational_classifier(var, f)) for f in feats_val]
+        predictions_val = [predict(variational_classifier(var, f)) for f in feats_val]
 
         # Compute accuracy on train and validation set
-        #acc_train = accuracy(Y_train, predictions_train)
-        #acc_val = accuracy(Y_val, predictions_val)
+        acc_train = accuracy(Y_train, predictions_train)
+        acc_val = accuracy(Y_val, predictions_val)
+        
+        print(
+        "Iter: {:5d} | Cost: {:0.7f} | Acc train: {:0.7f} | Acc validation: {:0.7f} "
+        "".format(it + 1, cost(var, features, Y), acc_train, acc_val)
+    )
+         
    
     for data in features_T:
 
          predictions.append(predict(variational_classifier(var, data)) )
+            
+      
+
+    # QHACK #
+
+    return array_to_concatenated_string(predictions)
 
     # QHACK #
 
