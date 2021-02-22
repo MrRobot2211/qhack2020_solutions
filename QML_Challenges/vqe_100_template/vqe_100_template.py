@@ -66,9 +66,24 @@ def run_vqe(H):
 
     # QHACK #
 
-    # Create a quantum device, set up a cost funtion and optimizer, and run the VQE.
-    # (We recommend ~500 iterations to ensure convergence for this problem,
-    # or you can design your own convergence criteria)
+    dev = qml.device('default.qubit', wires=num_qubits)
+
+    cost_fn = qml.ExpvalCost(variational_ansatz, H, dev)
+
+    opt = qml.GradientDescentOptimizer(stepsize=0.1)
+    np.random.seed(0)
+
+    max_iterations = 300
+    conv_tol = 1e-06
+
+
+    for _ in range(max_iterations):
+        params, prev_energy = opt.step_and_cost(cost_fn, params)
+        energy = cost_fn(params)
+        conv = np.abs(energy - prev_energy)
+
+        if conv <= conv_tol:
+            break
 
     # QHACK #
 
